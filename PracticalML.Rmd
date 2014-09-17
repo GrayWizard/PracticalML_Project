@@ -1,0 +1,101 @@
+---
+title: "Practical Machine Learning: Course Project"
+author: "Yury Bychkov"
+date: "Monday, September 15, 2014"
+output: html_document
+---
+
+## Summary
+The goal of this project is to train a machine learning algorithm on a set of provided labeled training data (each record of the dataset corresponds movements to a person performing the barbel lifting excersise either correctly or incorrectly in 5 different ways and is labeled with one of 5 corresponding classes) and use the trained model to predict a class for an unlabeled dataset.
+
+More detailed information about the dataset can be found at http://groupware.les.inf.puc-rio.br/har 
+
+## Loading the Data
+
+Load the required libraries and set a random seed for repeatability
+```{r}
+library(caret)
+library(randomForest)
+set.seed(25025)
+```
+
+Download and load the data and check the dimentions
+```{r}
+url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/"
+download.file(paste0(url,"pml-training.csv"), destfile = "pml-training.csv", method = "curl")
+download.file(paste0(url,"pml-testing.csv"), destfile = "pml-testing.csv", method = "curl")
+
+training_df = read.csv("pml-training.csv", na.strings=c("","NA"))
+testing = read.csv("pml-testing.csv", na.strings=c("","NA"))
+dim(training_df)
+dim(testing)
+```
+
+## Cleaning the Data
+
+Before we begin to train the model, we should clean-up the dataset.
+
+A number of columns contain mostly NA values and thus are not useful for prediction. Find columns that are mostly (>90%) NA:
+```{r}
+drop_na <- apply(training_df,2,function(x) mean(is.na(x))>0.9)
+```
+
+Remove them from the data
+```{r}
+testing <- testing[,!drop_na]
+training_df <- training_df[,!drop_na]
+```
+
+
+The first seven columns of the dataset do not contain motion data, so we will remove them as well.
+```{r}
+drop_useless <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")
+training_df <- training_df[,!(colnames(training_df) %in% drop_useless)]
+testing <- testing[,!(colnames(testing) %in% drop_useless)]
+```
+
+## Partitioning the Training Data
+
+Now that we have a clean dataset, we can partition the labeled set into a training and validation (70/30) subsets
+```{r}
+inTrain = createDataPartition(training_df$classe, p = 0.7, list=FALSE)
+validation <- training_df[-inTrain,]
+training <- training_df[inTrain,]
+```
+
+## Fitting a ML Model
+
+The first model we'll try to train is a Random Forest
+```{r}
+fit <- randomForest(classe ~ .,ntree=100, data=training)
+```
+
+Now that the model is trained, we can test its predictions on the validation set and determine the out-of-sample error
+```{r}
+prediction <- predict(fit, validation)
+confusionMatrix(validation$classe, prediction)
+```
+
+We can see that the out-of-sample error is less than 0.5%, so the model is very accurate. 
+
+*Note: Originally I wanted to train different models using training data then compare their performance on the validation data and either pick the best one or create a weighted multi-model predictor. However, the accuracy of Random Forest is so good, that it's unlikely another method will improve on it.*
+
+## Predicting the results on the test set
+
+Now we can run the model on the test set and see what classes it will predict
+```{r}
+predict_test <- predict(fit, testing)
+predict_test
+```
+
+Saving the results for the second part of the project submission
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(predict_test)
+```
